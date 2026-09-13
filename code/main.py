@@ -302,6 +302,125 @@ def forecast_baseline(context: dict) -> dict:
             "first_breach": None, "normalized_context": context}
 
 
+MODEL_ID = "gpt-4.1-2025-04-14"
+MAX_TURNS, MAX_ATTEMPTS, MAX_EVIDENCE_ATTEMPTS = 12, 24, 2
+
+
+def _source_index(dataset: dict, context: dict) -> dict[str, dict]:
+    """Return only supplied, request-scoped evidence available on the request date."""
+    cutoff = context["request_date"].isoformat() + "T23:59:59Z"
+    sources = {}
+    for row in dataset["messages"]:
+        if row["user_id"] == context["user_id"] and row.get("sent_at", "") <= cutoff and row.get("request_id") in {"", context["request"]["request_id"]}:
+            sources[row["message_id"]] = {"kind": "message", **dict(row)}
+    for row in dataset["images"]:
+        if row["user_id"] == context["user_id"] and row.get("request_id") in {"", context["request"]["request_id"]}:
+            sources[row["image_id"]] = {"kind": "image", **dict(row)}
+    return sources
+
+
+def _usage(total: dict, response: dict) -> None:
+    total["attempts"] += 1
+    usage = response.get("usage", {}) if isinstance(response, dict) else {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        value = usage.get(key)
+        if isinstance(value, int) and value >= 0:
+            total[key] = total.get(key, 0) + value
+        elif value is not None:
+            total["unavailable"] = True
+
+
+def _observation_error(code: str) -> dict:
+    return {"ok": False, "error": code}
+
+
+def _host_result(forecast: dict, revision: int, usage: dict, tools: list[dict]) -> dict:
+    return {
+        "status": forecast["status"], "request_id": forecast["normalized_context"]["request"]["request_id"],
+        "baseline_feasible": forecast["baseline_feasible"], "safe_amount": forecast["safe_amount"],
+        "earliest_date": forecast["earliest_date"], "first_breach": forecast.get("first_breach"),
+        "evidence_revision": revision, "usage": usage, "tool_sequence": tools,
+    }
+
+
+def _dispatch(action: dict, context: dict, dataset: dict, sources: dict, revision: int,
+              forecast: dict | None) -> tuple[dict, int, dict | None]:
+    """Literal host allowlist; no model field crosses the financial result boundary."""
+    name, args = action.get("tool"), action.get("arguments", {})
+    if not isinstance(args, dict):
+        return _observation_error("malformed_arguments"), revision, forecast
+    if name == "inspect_records":
+        return {"ok": True, "request_id": context["request"]["request_id"], "user_id": context["user_id"],
+                "evidence_ids": sorted(sources), "unresolved_evidence": sorted(context["unresolved_evidence"])}, revision, forecast
+    if name == "resolve_evidence":
+        return _observation_error("evidence_resolution_pending"), revision, forecast
+    if name == "forecast_baseline":
+        if context["unresolved_evidence"]:
+            return _observation_error("unresolved_evidence"), revision, forecast
+        forecast = forecast_baseline(context)
+        forecast["evidence_revision"] = revision
+        return {"ok": True, "status": forecast["status"], "baseline_feasible": forecast["baseline_feasible"],
+                "safe_amount": forecast["safe_amount"], "earliest_date": forecast["earliest_date"],
+                "evidence_revision": revision}, revision, forecast
+    if name == "finish":
+        if context["unresolved_evidence"]:
+            return _observation_error("unresolved_evidence"), revision, forecast
+        if not forecast or forecast.get("evidence_revision") != revision:
+            return _observation_error("stale_or_missing_forecast"), revision, forecast
+        return {"ok": True, "finished": True}, revision, forecast
+    return _observation_error("unknown_tool"), revision, forecast
+
+
+def run_request(request: dict, dataset: dict, client) -> dict:
+    """Run a bounded, model-selected workflow against host-owned financial tools."""
+    context = reconstruct_cash_state(build_request_context(dataset, request["request_id"], request))
+    sources, tools, usage = _source_index(dataset, context), [], {"attempts": 0, "unavailable": False}
+    context["unresolved_evidence"] = sorted(sources)
+    revision, forecast, evidence_attempts, failures = 0, None, {}, set()
+    observation = {"ok": True, "request_id": context["request"]["request_id"], "next": "inspect_records"}
+    for turn in range(MAX_TURNS):
+        if usage["attempts"] >= MAX_ATTEMPTS:
+            break
+        try:
+            response = client({"model": MODEL_ID, "turn": turn + 1, "observation": observation,
+                               "allowed_tools": ["inspect_records", "resolve_evidence", "forecast_baseline", "finish"],
+                               "timeout_seconds": 60})
+        except Exception as exc:
+            usage["attempts"] += 1
+            observation = _observation_error("provider_error")
+            if str(exc) in failures:
+                break
+            failures.add(str(exc))
+            continue
+        if not isinstance(response, dict):
+            observation = _observation_error("malformed_provider_response")
+            continue
+        _usage(usage, response)
+        action = response.get("action")
+        if not isinstance(action, dict):
+            observation = _observation_error("malformed_action")
+            continue
+        if action.get("tool") == "resolve_evidence":
+            source_id = action.get("arguments", {}).get("source_id") if isinstance(action.get("arguments"), dict) else None
+            if source_id in sources:
+                evidence_attempts[source_id] = evidence_attempts.get(source_id, 0) + 1
+                if evidence_attempts[source_id] > MAX_EVIDENCE_ATTEMPTS:
+                    observation = _observation_error("evidence_attempt_budget")
+                    tools.append({"tool": "resolve_evidence", "source_id": source_id, "ok": False})
+                    continue
+        observation, revision, forecast = _dispatch(action, context, dataset, sources, revision, forecast)
+        tools.append({"tool": action.get("tool"), "source_id": action.get("arguments", {}).get("source_id"), "ok": observation["ok"]})
+        if observation.get("finished"):
+            return _host_result(forecast, revision, usage, tools)
+        fingerprint = json.dumps(action, sort_keys=True, default=str)
+        if not observation["ok"] and fingerprint in failures:
+            break
+        if not observation["ok"]:
+            failures.add(fingerprint)
+    return {"status": "analysis_error", "request_id": context["request"]["request_id"], "reason": "workflow_budget_or_validation",
+            "evidence_revision": revision, "usage": usage, "tool_sequence": tools}
+
+
 def _json(value):
     if isinstance(value, Decimal):
         return format(value, "f")

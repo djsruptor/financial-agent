@@ -10,7 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from main import ZERO, build_request_context, check_schedule, forecast_baseline, load_dataset, project_flows, reconstruct_cash_state
+from main import ZERO, build_request_context, check_schedule, forecast_baseline, load_dataset, project_flows, reconstruct_cash_state, run_request
 
 
 def context(events, *, balance="500", floor="200", currency="EUR", day="2026-01-01", rates=()):
@@ -73,9 +73,40 @@ def sample_check(request_id: str) -> dict:
             "safe_amount": str(result["safe_amount"]), "earliest_date": str(result["earliest_date"] or "")}
 
 
+def scripted(*actions):
+    queue = list(actions)
+    def client(_prompt):
+        return {"action": queue.pop(0), "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3}}
+    return client
+
+
+def agent_checks() -> None:
+    dataset = load_dataset()
+    request = next(row for row in dataset["sample_requests"] if row["request_id"] == "request_01")
+    result = run_request(request, dataset, scripted(
+        {"tool": "inspect_records", "arguments": {}},
+        {"tool": "forecast_baseline", "arguments": {}},
+        {"tool": "finish", "arguments": {"safe_amount": "999999"}},
+    ))
+    assert result["status"] == "ok" and result["safe_amount"] == Decimal("25256")
+    assert [item["tool"] for item in result["tool_sequence"]] == ["inspect_records", "forecast_baseline", "finish"]
+    early = run_request(request, dataset, scripted({"tool": "finish", "arguments": {}}))
+    assert early["status"] == "analysis_error" and early["tool_sequence"][0]["ok"] is False
+    unknown = run_request(request, dataset, scripted({"tool": "shell", "arguments": {}}))
+    assert unknown["status"] == "analysis_error" and unknown["tool_sequence"][0]["tool"] == "shell"
+    cross = run_request(request, dataset, scripted({"tool": "resolve_evidence", "arguments": {"source_id": "message_01"}}))
+    assert cross["status"] == "analysis_error" and cross["tool_sequence"][0]["ok"] is False
+    malformed = run_request(request, dataset, lambda _prompt: {"action": "bad"})
+    assert malformed["status"] == "analysis_error"
+    repeated = run_request(request, dataset, scripted({"tool": "wat", "arguments": {}}, {"tool": "wat", "arguments": {}}))
+    assert repeated["status"] == "analysis_error" and len(repeated["tool_sequence"]) == 2
+    exhausted = run_request(request, dataset, scripted(*[{"tool": "inspect_records", "arguments": {}} for _ in range(13)]))
+    assert exhausted["status"] == "analysis_error" and len(exhausted["tool_sequence"]) == 12
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checks", choices=("input", "forecast", "core"))
+    parser.add_argument("--checks", choices=("input", "forecast", "core", "agent"))
     parser.add_argument("--samples")
     parser.add_argument("--structured-only", action="store_true")
     args = parser.parse_args()
@@ -83,6 +114,8 @@ def main() -> None:
         input_checks()
     if args.checks in {"forecast", "core"}:
         forecast_checks()
+    if args.checks == "agent":
+        agent_checks()
     if args.samples:
         print(json.dumps(sample_check(args.samples), sort_keys=True))
         return
