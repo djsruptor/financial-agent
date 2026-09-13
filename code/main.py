@@ -343,6 +343,51 @@ def _host_result(forecast: dict, revision: int, usage: dict, tools: list[dict]) 
     }
 
 
+def _apply_evidence(context: dict, source: dict, facts: object) -> tuple[bool, str]:
+    """Validate source-scoped facts before they change normalized financial state."""
+    if not isinstance(facts, list) or not facts:
+        return False, "missing_or_ambiguous_facts"
+    if source["kind"] == "image":
+        media = Path("dataset/media/images").resolve()
+        image = (media / f"{source['image_id']}.png").resolve()
+        if media not in image.parents or not image.is_file():
+            return False, "missing_or_unauthorized_image"
+    applied = False
+    for fact in facts:
+        if not isinstance(fact, dict) or fact.get("source_id") != (source.get("message_id") or source.get("image_id")):
+            return False, "invalid_fact_source"
+        try:
+            amount, effective = money(fact.get("amount")), as_date(fact.get("effective_date"))
+        except ValueError:
+            return False, "invalid_fact_value"
+        if amount is None or amount < ZERO or fact.get("currency") != context["home_currency"]:
+            return False, "invalid_fact_value"
+        effect, target_id = fact.get("effect"), fact.get("target_event_id", "")
+        if source["kind"] == "image":
+            if effect != "net_amount" or fact.get("field") != "net" or target_id != source.get("related_event_id"):
+                return False, "invalid_image_fact"
+        if effect == "salary_amendment":
+            targets = [event for event in context["events"] if event.get("category") == "salary" and event.get("direction") == "credit"
+                       and as_date(event.get("settlement_date") or event["event_date"]) >= effective]
+            if target_id:
+                targets = [event for event in targets if event["event_id"] == target_id]
+            if not targets:
+                return False, "ambiguous_or_missing_target"
+        elif effect == "net_amount":
+            targets = [event for event in context["events"] if event["event_id"] == target_id]
+            if len(targets) != 1:
+                return False, "ambiguous_or_missing_target"
+        else:
+            return False, "unsupported_evidence_effect"
+        for event in targets:
+            if event.get("currency") != fact["currency"]:
+                return False, "currency_mismatch"
+            if event.get("amount") != format(amount, "f"):
+                event["amount"] = format(amount, "f")
+                applied = True
+    return applied, "ok"
+
+
 def _dispatch(action: dict, context: dict, dataset: dict, sources: dict, revision: int,
               forecast: dict | None) -> tuple[dict, int, dict | None]:
     """Literal host allowlist; no model field crosses the financial result boundary."""
@@ -353,7 +398,23 @@ def _dispatch(action: dict, context: dict, dataset: dict, sources: dict, revisio
         return {"ok": True, "request_id": context["request"]["request_id"], "user_id": context["user_id"],
                 "evidence_ids": sorted(sources), "unresolved_evidence": sorted(context["unresolved_evidence"])}, revision, forecast
     if name == "resolve_evidence":
-        return _observation_error("evidence_resolution_pending"), revision, forecast
+        source_id = args.get("source_id")
+        source = sources.get(source_id)
+        if not source:
+            return _observation_error("unknown_or_unauthorized_evidence"), revision, forecast
+        applied, reason = _apply_evidence(context, source, args.get("facts"))
+        if reason != "ok":
+            return _observation_error(reason), revision, forecast
+        sources.pop(source_id)
+        context["unresolved_evidence"] = [item for item in context["unresolved_evidence"] if item != source_id]
+        if applied:
+            refreshed = reconstruct_cash_state(context)
+            refreshed["unresolved_evidence"] = sorted(set(refreshed["unresolved_evidence"] + context["unresolved_evidence"]))
+            context.clear()
+            context.update(refreshed)
+            revision += 1
+            forecast = None
+        return {"ok": True, "source_id": source_id, "changed": applied, "evidence_revision": revision}, revision, forecast
     if name == "forecast_baseline":
         if context["unresolved_evidence"]:
             return _observation_error("unresolved_evidence"), revision, forecast
@@ -393,6 +454,7 @@ def run_request(request: dict, dataset: dict, client) -> dict:
             failures.add(str(exc))
             continue
         if not isinstance(response, dict):
+            usage["attempts"] += 1
             observation = _observation_error("malformed_provider_response")
             continue
         _usage(usage, response)
