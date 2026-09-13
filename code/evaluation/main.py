@@ -22,10 +22,10 @@ def context(events, *, balance="500", floor="200", currency="EUR", day="2026-01-
             "events": events, "rates": list(rates), "unresolved_evidence": []}
 
 
-def event(identifier, amount, *, direction="debit", status="settled", when="2026-01-02", currency="EUR", linked="", kind="expense"):
+def event(identifier, amount, *, direction="debit", status="settled", when="2026-01-02", currency="EUR", linked="", kind="expense", category="rent", flexibility="variable"):
     return {"event_id": identifier, "amount": amount, "direction": direction, "status": status,
             "settlement_date": when, "event_date": when, "currency": currency, "linked_event_id": linked,
-            "event_type": kind, "category": "rent"}
+            "event_type": kind, "category": category, "flexibility": flexibility}
 
 
 def input_checks() -> None:
@@ -61,18 +61,64 @@ def forecast_checks() -> None:
     assert [flow["amount"] for flow in projected[:3]] == [Decimal("30")] * 3
 
 
+def essentials_checks() -> None:
+    rows = [event("a", "60", when="2025-10-05", category="groceries"),
+            event("b", "90", when="2025-11-15", category="groceries"),
+            event("c", "75", when="2025-12-25", category="groceries")]
+    c = context(rows, balance="1000", floor="200", day="2026-01-01")
+    c["protected_categories"] = {"groceries"}
+    state = reconstruct_cash_state(c)
+    flows = project_flows(state)
+    future = [flow for flow in flows if flow["source_id"].startswith("essential:") and flow["category"] == "groceries"]
+    assert sum((flow["amount"] for flow in future), ZERO) == Decimal("270")
+    explicit = state["flows"] + [{"source_id": "d", "date": date(2026, 1, 2), "amount": Decimal("30"),
+                                   "direction": "debit", "category": "groceries", "synthetic": False}]
+    assert sum((flow["amount"] for flow in project_flows({**state, "flows": explicit})
+                if flow["source_id"].startswith("essential:") and flow["category"] == "groceries"), ZERO) == Decimal("240")
+    # Same-source amendment is applied once; cancellation suppresses the affected event.
+    base = context([event("obligation", "100", when="2026-01-15", category="salary", direction="credit", kind="income")])
+    source = {"kind": "message", "message_id": "change", "user_id": "u"}
+    fact = {"source_id": "change", "effect": "salary_amendment", "amount": "120", "currency": "EUR", "effective_date": "2026-01-15", "target_event_id": "obligation"}
+    fact["target_event_id"] = "obligation"
+    assert _apply_evidence(base, source, [fact]) == (True, "ok")
+    assert _apply_evidence(base, source, [fact]) == (False, "ok")
+    cancel = {"source_id": "cancel", "effect": "cancellation", "amount": "0", "currency": "EUR", "effective_date": "2026-01-15", "target_event_id": "obligation"}
+    assert _apply_evidence(base, {**source, "message_id": "cancel"}, [cancel]) == (True, "ok")
+    assert base["events"][0]["status"] == "cancelled"
+
+
+def image_evidence_checks() -> None:
+    base = context([event("event_253", "", direction="credit", status="settled", when="2019-08-31", currency="IDR", category="salary", kind="income")], currency="IDR", day="2019-09-03")
+    image = {"kind": "image", "image_id": "image_01", "related_event_id": "event_253", "user_id": "u"}
+    good = {"source_id": "image_01", "effect": "net_amount", "field": "net", "target_event_id": "event_253", "amount": "4365000", "currency": "IDR", "effective_date": "2019-08-31", "extracted_text": "gross IDR5491000; net IDR4365000"}
+    assert _apply_evidence(base, image, [good]) == (True, "ok")
+    assert _apply_evidence(base, image, [{**good, "amount": "1"}])[1] == "invalid_image_fact"
+    assert _apply_evidence(base, image, [{**good, "field": "gross"}])[1] == "invalid_image_fact"
+
+
 def sample_check(request_id: str) -> dict:
     dataset = load_dataset()
     sample = next((row for row in dataset["sample_requests"] if row["request_id"] == request_id), None)
     if not sample:
         raise ValueError(f"unknown public sample: {request_id}")
     fields = ("request_id", "user_id", "request_date", "request_type", "requested_amount", "desired_completion_date", "allows_partial_payment", "request_text")
-    result = forecast_baseline(reconstruct_cash_state(build_request_context(dataset, request_id, {field: sample[field] for field in fields})))
-    if request_id == "request_01":
-        assert result["safe_amount"] == Decimal("25256")
-        assert result["earliest_date"] == date(2024, 3, 3)
+    request = {field: sample[field] for field in fields}
+    actions = [{"tool": "inspect_records", "arguments": {}}]
+    if request_id == "request_02":
+        actions.append({"tool": "resolve_evidence", "arguments": {"source_id": "message_01", "facts": [
+            {"source_id": "message_01", "effect": "salary_amendment", "amount": "42750000", "currency": "IDR", "effective_date": "2025-08-15"}]}})
+    if request_id == "request_03":
+        actions.append({"tool": "resolve_evidence", "arguments": {"source_id": "image_01", "facts": [
+            {"source_id": "image_01", "effect": "net_amount", "field": "net", "target_event_id": "event_253",
+             "amount": "4365000", "currency": "IDR", "effective_date": "2019-08-31",
+             "extracted_text": "gross IDR5491000; net IDR4365000"}]}})
+    actions += [{"tool": "forecast_baseline", "arguments": {}}, {"tool": "finish", "arguments": {}}]
+    result = run_request(request, dataset, scripted(*actions))
+    expected = EXPECTED[request_id]
+    assert result["status"] == "ok" and result["safe_amount"] == expected[0] and result["earliest_date"] == expected[1], result
     return {"request_id": request_id, "baseline_feasible": result["baseline_feasible"],
-            "safe_amount": str(result["safe_amount"]), "earliest_date": str(result["earliest_date"] or "")}
+            "safe_amount": str(result["safe_amount"]), "earliest_date": str(result["earliest_date"] or ""),
+            "tools": [item["tool"] for item in result["tool_sequence"]]}
 
 
 def scripted(*actions):
@@ -198,7 +244,7 @@ def live_samples(request_ids: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checks", choices=("input", "forecast", "core", "agent", "evidence", "phase1"))
+    parser.add_argument("--checks", choices=("input", "forecast", "core", "agent", "evidence", "essentials", "image-evidence", "gaps", "phase1"))
     parser.add_argument("--samples")
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--structured-only", action="store_true")
@@ -211,6 +257,15 @@ def main() -> None:
         agent_checks()
     if args.checks == "evidence":
         evidence_checks()
+    if args.checks == "essentials":
+        essentials_checks()
+    if args.checks == "image-evidence":
+        image_evidence_checks()
+    if args.checks == "gaps":
+        essentials_checks()
+        image_evidence_checks()
+        for request_id in ("request_01", "request_02", "request_03"):
+            sample_check(request_id)
     if args.checks == "phase1":
         phase1_checks()
     if args.samples:
@@ -221,7 +276,8 @@ def main() -> None:
                 print(json.dumps({"status": "live_acceptance_blocked", "reason": str(exc)}))
                 raise SystemExit(2)
             return
-        print(json.dumps(sample_check(args.samples), sort_keys=True))
+        results = [sample_check(request_id) for request_id in args.samples.split(",")]
+        print(json.dumps(results[0] if len(results) == 1 else results, sort_keys=True))
         return
     print("checks passed")
 

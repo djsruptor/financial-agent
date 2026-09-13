@@ -73,6 +73,7 @@ def build_request_context(dataset: dict, request_id: str, request: dict | None =
         "request": request, "profile": dict(profile), "user_id": user_id,
         "request_date": request_day, "home_currency": profile["home_currency"],
         "balance": balance, "floor": floor, "requested_amount": money(request["requested_amount"]),
+        "protected_categories": {x.strip() for x in profile.get("expense_categories_to_protect", "").split("|") if x.strip()},
         "events": [dict(e) for e in dataset["financial_events"] if e["user_id"] == user_id],
         "rates": [dict(rate) for rate in dataset["exchange_rates"]],
         "unresolved_evidence": [],
@@ -240,6 +241,57 @@ def _supported_salary_schedule(events: list[dict], start: date, end: date) -> li
     return result
 
 
+def _irregular_essential_reserves(context: dict, start: date, end: date, explicit: list[dict]) -> list[dict]:
+    """Reserve unsupported-cadence protected essentials by conservative 30-day blocks."""
+    result = []
+    for category in context.get("protected_categories", set()):
+        dated = []
+        for event in context["events"]:
+            if event.get("category") != category or event.get("direction") != "debit" or event.get("status") != "settled":
+                continue
+            try:
+                when, amount = as_date(event.get("settlement_date") or event["event_date"]), money(event.get("amount"))
+            except (ValueError, KeyError):
+                continue
+            if amount is not None and start - timedelta(days=90) <= when < start:
+                dated.append((when, amount))
+        if len(dated) < 3:
+            continue
+        dated.sort()
+        gaps = [(dated[i][0] - dated[i - 1][0]).days for i in range(1, len(dated))]
+        if len(gaps) >= 2 and gaps[-1] == gaps[-2] in {7, 14, 21}:
+            continue
+        import calendar
+        recent_days = [when.day for when, _ in dated[-3:]]
+        if len(set(recent_days)) == 1 or all(when.day == calendar.monthrange(when.year, when.month)[1] for when, _ in dated[-3:]):
+            continue
+        windows = [sum((amount for when, amount in dated
+                        if start - timedelta(days=30 * (index + 1)) <= when < start - timedelta(days=30 * index)), ZERO)
+                   for index in range(3)]
+        reserve = max(windows, default=ZERO)
+        if reserve <= ZERO:
+            continue
+        for block_start in (start + timedelta(days=30 * n) for n in range(3)):
+            block_end = min(block_start + timedelta(days=30), end + timedelta(days=1))
+            if block_start >= block_end:
+                continue
+            explicit_total = sum((flow["amount"] for flow in explicit
+                                  if flow["direction"] == "debit" and flow["category"] == category
+                                  and block_start <= flow["date"] < block_end), ZERO)
+            residual = max(reserve - explicit_total, ZERO)
+            if residual <= ZERO:
+                continue
+            days = (block_end - block_start).days
+            daily, remainder = divmod(residual, Decimal(days))
+            for offset in range(days):
+                amount = daily + (remainder if offset == days - 1 else ZERO)
+                if amount:
+                    result.append({"source_id": f"essential:{category}:{block_start.isoformat()}",
+                                   "date": block_start + timedelta(days=offset), "amount": amount,
+                                   "direction": "debit", "category": category, "synthetic": True})
+    return result
+
+
 def project_flows(context: dict) -> list[dict]:
     """Combine explicit normalized cash with supported, non-duplicated recurrences."""
     start, end = context["request_date"], context["request_date"] + timedelta(days=89)
@@ -247,6 +299,7 @@ def project_flows(context: dict) -> list[dict]:
     used = {(flow["date"], flow["category"], flow["direction"]) for flow in explicit}
     inferred = [flow for flow in _recurs_monthly(context["events"], start, end) + _recurs_interval(context["events"], start, end) + _supported_salary_schedule(context["events"], start, end)
                 if (flow["date"], flow["category"], flow["direction"]) not in used]
+    inferred.extend(_irregular_essential_reserves(context, start, end, explicit))
     return sorted(explicit + inferred, key=lambda flow: (flow["date"], flow["direction"] != "debit", flow["source_id"]))
 
 
@@ -371,6 +424,28 @@ def _apply_evidence(context: dict, source: dict, facts: object) -> tuple[bool, s
         if source["kind"] == "image":
             if effect != "net_amount" or fact.get("field") != "net" or target_id != source.get("related_event_id"):
                 return False, "invalid_image_fact"
+            target = next((event for event in context["events"] if event["event_id"] == target_id), None)
+            extracted = fact.get("extracted_text", "")
+            if not target or not extracted or target.get("currency") != fact.get("currency"):
+                return False, "invalid_image_fact"
+            candidates = re.findall(r"\b(?:IDR|EUR|USD|ZAR|INR)\s*([0-9][0-9,.]*)", str(extracted).upper())
+            if len(candidates) != 2:
+                return False, "invalid_image_fact"
+            try:
+                parsed = [money(value.replace(",", "")) for value in candidates]
+            except ValueError:
+                return False, "invalid_image_fact"
+            if parsed.count(amount) != 1 or "NET" not in str(extracted).upper() or "GROSS" not in str(extracted).upper():
+                return False, "invalid_image_fact"
+        if effect == "cancellation":
+            targets = [event for event in context["events"] if event["event_id"] == target_id]
+            if len(targets) != 1:
+                return False, "ambiguous_or_missing_target"
+            for event in targets:
+                if event.get("status") != "cancelled":
+                    event["status"] = "cancelled"
+                    applied = True
+            continue
         if effect == "salary_amendment":
             targets = [event for event in context["events"] if event.get("category") == "salary" and event.get("direction") == "credit"
                        and as_date(event.get("settlement_date") or event["event_date"]) >= effective]
