@@ -44,6 +44,12 @@ Progress: [░░░░░░░░░░] 0%
 - Resolve date/recurrence semantics from the supplied specification/examples and select an accessible extraction model when implementing.
 - The listed challenge deadline has passed; submission availability is unverified.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|---|---|---|---|
+| 260913-gbv | Remove planning excess | 2026-09-13 | 99c88af | [Record](./quick/260913-gbv-remove-planning-excess-and-keep-only-the/) |
+
 ## Session Continuity
 
 Last session: 2026-09-13
