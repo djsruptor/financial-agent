@@ -71,7 +71,7 @@ Recommend only payment plans that complete the request by its deadline while pro
 | `images.csv` | 16 | Image-to-record links |
 | `output.csv` | 250 | Blank output template |
 
-All 16 referenced PNGs are present under `dataset/media/images/`. There are 16 financial-event rows with blank amounts; their values require image interpretation. Image contents and individual financial cases have not yet been analyzed. Dataset currencies are INR, ZAR, IDR, USD, and EUR.
+All 16 referenced PNGs are present under `dataset/media/images/`. There are 16 financial-event rows with blank amounts; their values require image interpretation. Representative payroll and utility images and sample output patterns were inspected during initialization; complete case reconstruction and extraction validation remain implementation work. Dataset currencies are INR, ZAR, IDR, USD, and EUR.
 
 ### Starting implementation
 
@@ -96,7 +96,7 @@ For installments, use an actual supplied offer without inventing or shifting its
 - Select the runtime and model/provider approach, including image interpretation, after examining representative evidence and available tooling; no provider or budget is yet approved.
 - Resolve forecast-boundary inclusivity, same-day cash-flow ordering, recurrence anchoring, and any status/deadline edge cases against the supplied examples and specification before locking the engine's behavior.
 - Determine how usage and cost records will remain tied to the final prediction run, including any cached extraction reused by that run.
-- Set workflow preferences, research scope, detailed requirement IDs, and roadmap phases in the remaining GSD initialization steps.
+- Workflow preferences, project research, requirement IDs, and four roadmap phases are now recorded. Detailed Phase 1 planning is next.
 
 ## Constraints
 
@@ -120,6 +120,10 @@ For installments, use an actual supplied offer without inventing or shifting its
 | Preserve source datasets and use solved samples only for evaluation | Required by the challenge; avoids corrupting inputs or leaking labels | — Pending implementation |
 | Require deterministic financial safety verification | Every recommended schedule must satisfy the same explicit cash-flow rules | — Pending implementation |
 | Start from the existing empty entry points | No existing implementation needs migration or architectural mapping | — Pending implementation |
+| Automatic workflow with coarse phases and sequential plans | User approved the proposed defaults and automatic execution | ✓ Configured |
+| Inherit the current planning model; enable research, plan checks, and verification | Approved workflow preferences; no optional PR sections | ✓ Configured |
+| Four vertical terminal-capability phases | Each phase extends a runnable decision path through the full contract | — Pending implementation |
+| Prefer Python standard-library financial logic and one AI extraction boundary | Local runtime is available; dataset identifiers already support retrieval | — Pending implementation |
 
 ## Evolution
 
@@ -139,4 +143,4 @@ After each milestone:
 4. Update context with the current implementation, evaluation evidence, and known issues.
 
 ---
-*Last updated: 2026-09-13 after approved project definition; workflow configuration and roadmap pending.*
+*Last updated: 2026-09-13 after configuration, research, requirements, and roadmap initialization.*

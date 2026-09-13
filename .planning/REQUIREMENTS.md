@@ -90,7 +90,49 @@ None committed. Optional OCR optimization, parallel processing, additional provi
 
 ## Traceability
 
-Pending roadmap assignment. Each v1 requirement will map to exactly one owning phase; later phases may extend its regression coverage.
+Each v1 requirement has one owning phase; later phases may extend its regression coverage.
+
+| Requirement | Phase | Status |
+|---|---|---|
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 1 | Pending |
+| DATA-03 | Phase 1 | Pending |
+| CASH-01 | Phase 1 | Pending |
+| CASH-02 | Phase 1 | Pending |
+| CASH-03 | Phase 1 | Pending |
+| CASH-04 | Phase 1 | Pending |
+| CASH-05 | Phase 1 | Pending |
+| FORE-01 | Phase 1 | Pending |
+| FORE-02 | Phase 1 | Pending |
+| FORE-03 | Phase 1 | Pending |
+| EVID-01 | Phase 2 | Pending |
+| EVID-02 | Phase 2 | Pending |
+| EVID-03 | Phase 2 | Pending |
+| EVID-04 | Phase 2 | Pending |
+| EVID-05 | Phase 2 | Pending |
+| EVID-06 | Phase 2 | Pending |
+| PLAN-01 | Phase 1 | Pending |
+| PLAN-02 | Phase 3 | Pending |
+| PLAN-03 | Phase 3 | Pending |
+| PLAN-04 | Phase 3 | Pending |
+| PLAN-05 | Phase 3 | Pending |
+| PLAN-06 | Phase 3 | Pending |
+| PLAN-07 | Phase 3 | Pending |
+| PLAN-08 | Phase 3 | Pending |
+| PLAN-09 | Phase 3 | Pending |
+| OUT-01 | Phase 4 | Pending |
+| OUT-02 | Phase 3 | Pending |
+| OUT-03 | Phase 3 | Pending |
+| OUT-04 | Phase 4 | Pending |
+| EVAL-01 | Phase 4 | Pending |
+| EVAL-02 | Phase 1 | Pending |
+| EVAL-03 | Phase 4 | Pending |
+| SHIP-01 | Phase 4 | Pending |
+| SHIP-02 | Phase 4 | Pending |
+| SHIP-03 | Phase 4 | Pending |
+
+**Coverage:** 36 v1 requirements; 36 mapped; 0 unmapped.
+
 
 ---
 *Requirements defined: 2026-09-13 from the approved full challenge scope and completed research.*
