@@ -5,16 +5,20 @@
 
 ## v1 Requirements
 
+### Agentic Orchestration
+
+- [ ] **AGENT-01**: A bounded model-driven request orchestrator selects allowlisted evidence/financial tools from observations, validates scoped tool arguments, resolves evidence before forecasting, and finishes only with a current deterministic checked result. Enforce budgets and explicit analysis failures; record actual orchestration and extraction usage. Extend this same loop with payment tools in Phase 2.
+
 ### Input
 
-- [ ] **DATA-01**: Read only the supplied participant files, join relevant user/request/event records at each request date, and reject invalid required fields. Keep source data unchanged and labels out of prediction logic.
-- [ ] **DATA-03**: Convert foreign-currency cash events with the supplied settlement-date rate and stated direction; do not substitute live or invented rates.
+- [x] **DATA-01**: Read only the supplied participant files, join relevant user/request/event records at each request date, and reject invalid required fields. Keep source data unchanged and labels out of prediction logic.
+- [x] **DATA-03**: Convert foreign-currency cash events with the supplied settlement-date rate and stated direction; do not substitute live or invented rates.
 
 ### Financial State
 
-- [ ] **CASH-01**: Start from the profile balance without replaying settled history; remove duplicate representations while retaining distinct real linked cash movements.
-- [ ] **CASH-03**: Reserve pending debits and confirmed commitments, count supported income on its settlement date, and exclude pending credits, failed/cancelled transactions, and unrealized investment value.
-- [ ] **CASH-04**: Infer recurring income/expenses only from supporting evidence, distinguish one-time flows, and conservatively cover essential variable spending and protected categories without double reserves.
+- [x] **CASH-01**: Start from the profile balance without replaying settled history; remove duplicate representations while retaining distinct real linked cash movements.
+- [x] **CASH-03**: Reserve pending debits and confirmed commitments, count supported income on its settlement date, and exclude pending credits, failed/cancelled transactions, and unrealized investment value.
+- [x] **CASH-04**: Infer recurring income/expenses only from supporting evidence, distinguish one-time flows, and conservatively cover essential variable spending and protected categories without double reserves.
 
 ### Supplied Evidence
 
@@ -24,9 +28,9 @@
 
 ### 90-Day Capacity
 
-- [ ] **FORE-01**: Forecast supported cash flows over 90 days and check the preferred minimum balance throughout; establish consistent same-day and date-boundary behavior from the specification/examples.
-- [ ] **FORE-02**: Compute the maximum safe payment on the request date before optional changes, with 0 <= amount_safe_to_pay <= requested_amount.
-- [ ] **FORE-03**: Find the earliest safe single full-payment date without optional changes and independently of payment preferences; leave it empty if none exists within the forecast.
+- [x] **FORE-01**: Forecast supported cash flows over 90 days and check the preferred minimum balance throughout; establish consistent same-day and date-boundary behavior from the specification/examples.
+- [x] **FORE-02**: Compute the maximum safe payment on the request date before optional changes, with 0 <= amount_safe_to_pay <= requested_amount.
+- [x] **FORE-03**: Find the earliest safe single full-payment date without optional changes and independently of payment preferences; leave it empty if none exists within the forecast.
 
 ### Payment Decisions
 
@@ -46,7 +50,7 @@
 ### Evaluation
 
 - [ ] **EVAL-01**: Run the same engine on all 25 public examples and report numeric errors and categorical/schedule mismatches. Use samples only for evaluation; do not claim hidden accuracy.
-- [ ] **EVAL-02**: Keep focused runnable checks for financial arithmetic, cash-state handling, reserve breaches, and date behavior; extend them for required payment/evidence rules as implemented.
+- [x] **EVAL-02**: Keep focused runnable checks for financial arithmetic, cash-state handling, reserve breaches, and date behavior; extend them for required payment/evidence rules as implemented.
 
 ### Submission
 
@@ -66,17 +70,18 @@ None. Do not scaffold optional features.
 
 | Requirement | Phase | Status |
 |---|---|---|
-| DATA-01 | Phase 1 | Pending |
-| DATA-03 | Phase 1 | Pending |
-| CASH-01 | Phase 1 | Pending |
-| CASH-03 | Phase 1 | Pending |
-| CASH-04 | Phase 1 | Pending |
+| AGENT-01 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Complete |
+| DATA-03 | Phase 1 | Complete |
+| CASH-01 | Phase 1 | Complete |
+| CASH-03 | Phase 1 | Complete |
+| CASH-04 | Phase 1 | Complete |
 | EVID-01 | Phase 1 | Pending |
 | EVID-02 | Phase 1 | Pending |
 | EVID-04 | Phase 1 | Pending |
-| FORE-01 | Phase 1 | Pending |
-| FORE-02 | Phase 1 | Pending |
-| FORE-03 | Phase 1 | Pending |
+| FORE-01 | Phase 1 | Complete |
+| FORE-02 | Phase 1 | Complete |
+| FORE-03 | Phase 1 | Complete |
 | PLAN-01 | Phase 2 | Pending |
 | PLAN-02 | Phase 2 | Pending |
 | PLAN-03 | Phase 2 | Pending |
@@ -87,9 +92,9 @@ None. Do not scaffold optional features.
 | OUT-03 | Phase 2 | Pending |
 | OUT-04 | Phase 2 | Pending |
 | EVAL-01 | Phase 3 | Pending |
-| EVAL-02 | Phase 1 | Pending |
+| EVAL-02 | Phase 1 | Complete |
 | SHIP-01 | Phase 3 | Pending |
 | SHIP-02 | Phase 3 | Pending |
 | SHIP-03 | Phase 3 | Pending |
 
-**Coverage:** 25 requirements; 25 mapped; 0 unmapped. All challenge behaviors retained.
+**Coverage:** 26 requirements; 26 mapped; 0 unmapped. All challenge behaviors retained.

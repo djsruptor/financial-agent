@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A terminal program for the supplied HackerRank challenge. It reads `dataset/`, decides how each requested expense can safely be paid, and produces `output.csv`, `code.zip`, and the required transcript.
+A terminal agentic solution for the supplied HackerRank challenge. A bounded model-driven orchestrator chooses evidence and financial tools for each request. It reads `dataset/`, decides how each requested expense can safely be paid, and produces `output.csv`, `code.zip`, and the required transcript.
 
 ## Core Value
 
@@ -25,7 +25,7 @@ The checkable contract is in `REQUIREMENTS.md`; detailed financial rules remain 
 
 ### Out of Scope
 
-Messaging interfaces, translation/localization features, language settings, a generalized document platform, persistent extraction caches, provenance databases, run-ledger infrastructure, dashboards, live financial feeds, agent frameworks, provider routing, and model training. Do not add them as optional future scaffolding.
+Messaging interfaces, translation/localization features, language settings, a generalized document platform, persistent extraction caches, provenance databases, run-ledger infrastructure, dashboards, live financial feeds, multi-agent frameworks, provider routing, and model training. Do not add them as optional future scaffolding.
 
 ## Context
 
@@ -38,7 +38,7 @@ The program must interpret relevant supplied message/image content to satisfy th
 ## Implementation Constraints
 
 - Use ordinary Python functions, `csv`, `Decimal`, and date utilities. Start in the existing entry points; split a helper file only when the actual implementation needs it.
-- Use one model integration for necessary text/image extraction. Validate returned facts before financial calculations. No orchestration framework or separate extraction service.
+- Use one model-driven orchestrator with allowlisted evidence and financial tools. The model chooses actions from observations; host code validates facts, enforces budgets and owns all financial results. Use one provider/client, ordinary functions and in-memory request state; no orchestration framework or separate service.
 - Keep monetary calculations, schedule generation, ranking, and validation deterministic. Preserve input validation, prompt-injection boundaries, and checks that prevent incorrect financial decisions or output loss.
 - Record model-call counts and token totals when calls occur; write the required cost report for the final dataset run. Ordinary counters suffice; no persistent usage ledger or output hashing subsystem.
 - Keep supplied data immutable; do not use hidden labels or hardcoded predictions. Secrets come from environment variables and stay out of the package and transcript.
@@ -49,15 +49,16 @@ The program must interpret relevant supplied message/image content to satisfy th
 
 | Decision | Rationale | Status |
 |---|---|---|
-| Challenge requirements only | User explicitly requested removal of all implementation excess | Adopted |
-| Three phases: decisions, payment selection, submission | Removes the standalone evidence subsystem phase | Ready to plan |
+| Lean agentic orchestrator | User explicitly requires agentic structure as core; financial authority stays deterministic | Adopted |
+| Challenge requirements and requested agentic workflow | User explicitly requested removal of all implementation excess | Adopted |
+| Three phases: decisions, payment selection, submission | Removes the standalone evidence subsystem phase | Phase 1 planned |
 | No language-specific feature requirement | Process the actual supplied evidence without expanding product scope | Adopted |
 | No mandatory cache, provenance store, or run ledger | Not required to produce correct predictions and the usage report | Adopted |
 | Python standard library plus one necessary model client | Reuses starter files and keeps the solution small | Pending implementation |
 
 ## Open Questions
 
-Resolve forecast-boundary/same-day rules, recurrence, installment-duration interpretation, and the accessible model during implementation against the specification and examples. Do not build configurable policies for every ambiguity.
+Phase 1 date, recurrence, evidence, orchestration and numerical acceptance policies are specified in `.planning/phases/01-financial-decision-pipeline/01-CONTEXT.md`. Validate these explicit assumptions against supplied evidence; do not silently tune rules to labels. Select and document one accessible vision/tool-capable model during execution; live acceptance requires credentials and actual measured calls. Installment-duration interpretation remains Phase 2 work.
 
 The repository's September 13, 2026 18:00 IST deadline has passed; submission availability is unverified. Development continues.
 

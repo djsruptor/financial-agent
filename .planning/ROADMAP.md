@@ -2,30 +2,32 @@
 
 ## Overview
 
-Three sequential phases deliver the required terminal submission. Evidence handling is part of reading the provided inputs. Do not create messaging features, a document platform, cache/provenance infrastructure, or additional product surfaces.
+Three sequential phases deliver the required terminal submission. A bounded model-driven orchestrator chooses evidence and deterministic financial tools. Do not create messaging features, a document platform, cache/provenance infrastructure, or additional product surfaces.
 
 ## Phases
 
-- [ ] **Phase 1: Financial Decision Pipeline** - Read the supplied evidence and produce a checked 90-day forecast with baseline payment capacity.
+- [x] **Phase 1: Financial Decision Pipeline** - Read the supplied evidence and produce a checked 90-day forecast with baseline payment capacity. (completed 2026-09-13)
 - [ ] **Phase 2: Payment Selection and Output** - Complete all required payment methods, spending adjustments, and CSV output.
 - [ ] **Phase 3: Evaluation and Submission** - Check the samples, run the dataset, and package the required artifacts.
 
 ## Phase Details
 
 ### Phase 1: Financial Decision Pipeline
-**Goal:** Run a supplied request from input files through financial reconstruction to a baseline forecast and safe-to-pay/full-payment date.
+**Goal:** Run a supplied request through a model-driven tool loop that resolves evidence and obtains a deterministic checked baseline forecast and safe-to-pay/full-payment date.
 **Mode:** mvp
 **Depends on:** Nothing (first phase)
-**Requirements:** DATA-01, DATA-03, CASH-01, CASH-03, CASH-04, EVID-01, EVID-02, EVID-04, FORE-01, FORE-02, FORE-03, EVAL-02
+**Requirements:** AGENT-01, DATA-01, DATA-03, CASH-01, CASH-03, CASH-04, EVID-01, EVID-02, EVID-04, FORE-01, FORE-02, FORE-03, EVAL-02
 **UI hint:** no
 **Success Criteria:**
 1. The terminal program loads relevant supplied records and interprets necessary message/image facts; missing amounts, invalid facts, and embedded instructions cannot silently change the financial rules.
 2. Forecasts start from the profile balance, resolve real versus duplicate cash movements, use supplied dated FX, and include only supported income and commitments with protected essential spending.
-3. A 90-day calculation produces baseline safe capacity and the earliest safe full-payment date; a representative supplied sample exercises the path and unresolved facts are reported rather than guessed.
+3. A 90-day calculation produces baseline safe capacity and the earliest safe full-payment date; three named supplied samples match exact numerical oracles and unresolved facts are reported rather than guessed.
 4. Focused runnable checks cover snapshot double-counting, invalid money, date/FX handling, and reserve breaches. Model-call usage is counted from the first call for the eventual required report.
-**Plans:** TBD (target 1–2 plans)
+**Plans:** 2/2 plans complete
+- [x] 01-01-PLAN.md — Deterministic financial tools and numerical oracles (wave 1)
+- [x] 01-02-PLAN.md — Bounded model-driven orchestrator, evidence and live acceptance (wave 2)
 
-Implement with functions in the existing Python entry point. One extraction function/client is sufficient; no language detection, translation interface, persistent cache, or generalized evidence subsystem. Resolve financial date/recurrence assumptions against the supplied rules and examples.
+Implement with functions in the existing Python entry point. Use one model/client and a bounded allowlisted tool loop; code owns money, safety and termination. Follow `.planning/phases/01-financial-decision-pipeline/01-CONTEXT.md` for concrete financial assumptions and required offline/live acceptance. No translation interface, persistent cache or generalized evidence subsystem.
 
 ### Phase 2: Payment Selection and Output
 **Goal:** Produce one complete, safe, personalized recommendation per request in the required CSV format.
@@ -40,7 +42,7 @@ Implement with functions in the existing Python entry point. One extraction func
 4. The command writes root-level `output.csv` with all evaluation IDs and the exact required columns/formats after validation; a failed run preserves prior valid output.
 **Plans:** TBD (target 1–2 plans)
 
-Use the same forecast checker for every candidate. Add focused cases to the existing checks; no separate planner service, optimization platform, or reporting interface.
+Extend the existing request orchestrator with deterministic candidate generation, safety/ranking and output tools; require their checked result before finish. The model cannot invent schedules or override eligibility/ranking. Use the same forecast checker for every candidate. Add focused cases to the existing checks; no separate planner service, optimization platform, or reporting interface.
 
 ### Phase 3: Evaluation and Submission
 **Goal:** Deliver evaluated predictions and the runnable submission package with the required usage report and transcript.
@@ -61,7 +63,7 @@ Use a straightforward evaluation script, usage counters, and standard ZIP packag
 
 | Phase | Plans Complete | Status | Completed |
 |---|---|---|---|
-| 1. Financial Decision Pipeline | 0/TBD | Not started | - |
+| 1. Financial Decision Pipeline | 2/2 | Complete   | 2026-09-13 |
 | 2. Payment Selection and Output | 0/TBD | Not started | - |
 | 3. Evaluation and Submission | 0/TBD | Not started | - |
 

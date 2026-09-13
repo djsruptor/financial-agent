@@ -1,16 +1,9 @@
 # Implementation Shape
 
-**Updated:** 2026-09-13 after scope reduction
+Updated 2026-09-13: the user explicitly requires agentic orchestration as core. This supersedes the earlier extraction-only pipeline.
 
-```text
-supplied CSVs/images → necessary fact extraction → cash forecast
-                    → permitted payment candidates → safety/ranking → output.csv
-```
+One model-driven orchestrator per request selects allowlisted inspect/evidence/forecast/finish tools based on observations. It keeps ordinary in-memory request state. Host code scopes access, validates facts, enforces turn/call budgets, invalidates stale forecasts, and returns only deterministic checked money. A fixed extraction pipeline renamed an agent is insufficient.
 
-Start with ordinary functions in `code/main.py`. Use the existing `code/evaluation/main.py` to call the same engine for the public examples. Add one helper file only if actual code becomes hard to follow; do not scaffold modules or classes for future extensibility.
+Use ordinary Python functions in `code/main.py`, one model SDK and the existing evaluator. No multi-agent framework, separate services, persistent caches, provenance database or ledger. Model usage counters include orchestration, evidence and reported retry usage.
 
-Financial calculations and schedule checks stay deterministic. An extraction result is ordinary validated data; source IDs may be retained in memory to resolve the provided links, without building a provenance store. Secrets stay in environment variables. Invalid or missing evidence fails explicitly rather than becoming zero or an invented financial fact.
-
-Accumulate the model's returned usage in simple counters during the run. Generate the required usage report from those totals. No cache manager, persistent run ledger, output hashing, service boundary, or reporting UI is planned.
-
-Build order: (1) input/evidence and financial capacity, (2) all payment decisions and output, (3) evaluation and packaging. Preserve baseline capacity when trying spending changes and replay complete cumulative schedules before selection.
+Phase 1's concrete policies and acceptance cases live in `../phases/01-financial-decision-pipeline/01-CONTEXT.md`. Phase 2 adds deterministic candidate selection/ranking and output tools to the same loop; Phase 3 measures all samples, runs the dataset and packages the submission. Model output never overrides financial checks.
