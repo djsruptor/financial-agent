@@ -23,10 +23,11 @@ Three sequential phases deliver the required terminal submission. A bounded mode
 2. Forecasts start from the profile balance, resolve real versus duplicate cash movements, use supplied dated FX, and include only supported income and commitments with protected essential spending.
 3. A 90-day calculation produces baseline safe capacity and the earliest safe full-payment date; three named supplied samples match exact numerical oracles and unresolved facts are reported rather than guessed.
 4. Focused runnable checks cover snapshot double-counting, invalid money, date/FX handling, and reserve breaches. Model-call usage is counted from the first call for the eventual required report.
-**Plans:** 2/3 plans complete; verification gaps remain
+**Plans:** 3/4 plans complete; verification gaps remain
 - [x] 01-01-PLAN.md — Deterministic financial tools and numerical oracles (wave 1)
 - [x] 01-02-PLAN.md — Bounded model-driven orchestrator, evidence and live acceptance (wave 2)
 - [ ] 01-03-PLAN.md — Verification gap closure for essentials, images and all sample oracles (wave 3)
+- [ ] 01-04-PLAN.md — Resolve request_02/request_03 numerical mismatches and recheck live gate (wave 4)
 
 Implement with functions in the existing Python entry point. Use one model/client and a bounded allowlisted tool loop; code owns money, safety and termination. Follow `.planning/phases/01-financial-decision-pipeline/01-CONTEXT.md` for concrete financial assumptions and required offline/live acceptance. No translation interface, persistent cache or generalized evidence subsystem.
 
@@ -64,7 +65,7 @@ Use a straightforward evaluation script, usage counters, and standard ZIP packag
 
 | Phase | Plans Complete | Status | Completed |
 |---|---|---|---|
-| 1. Financial Decision Pipeline | 2/3 | Needs Review | - |
+| 1. Financial Decision Pipeline | 3/4 | Needs Review | - |
 | 2. Payment Selection and Output | 0/TBD | Not started | - |
 | 3. Evaluation and Submission | 0/TBD | Not started | - |
 
