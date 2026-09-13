@@ -297,7 +297,9 @@ def project_flows(context: dict) -> list[dict]:
     start, end = context["request_date"], context["request_date"] + timedelta(days=89)
     explicit = list(context.get("flows", []))
     used = {(flow["date"], flow["category"], flow["direction"]) for flow in explicit}
+    salary_amendments = {event.get("event_id") for event in context["events"] if event.get("event_type") == "salary_amendment"}
     inferred = [flow for flow in _recurs_monthly(context["events"], start, end) + _recurs_interval(context["events"], start, end) + _supported_salary_schedule(context["events"], start, end)
+                if not (salary_amendments and flow["category"] == "salary" and flow["source_id"] not in salary_amendments)
                 if (flow["date"], flow["category"], flow["direction"]) not in used]
     inferred.extend(_irregular_essential_reserves(context, start, end, explicit))
     return sorted(explicit + inferred, key=lambda flow: (flow["date"], flow["direction"] != "debit", flow["source_id"]))
@@ -456,7 +458,8 @@ def _apply_evidence(context: dict, source: dict, facts: object) -> tuple[bool, s
                            and event.get("status") == "settled" and as_date(event.get("settlement_date") or event["event_date"]) < effective]
                 if target_id or len(history) < 3:
                     return False, "ambiguous_or_missing_target"
-                targets = [{"event_id": f"{fact['source_id']}:salary", "user_id": context["user_id"], "event_type": "income",
+                targets = [{"event_id": f"{fact['source_id']}:salary", "user_id": context["user_id"],
+                            "event_type": "salary_amendment",
                             "description": "validated salary amendment", "category": "salary", "direction": "credit",
                             "amount": "", "currency": fact["currency"], "event_date": effective.isoformat(),
                             "settlement_date": effective.isoformat(), "status": "scheduled", "linked_event_id": "", "flexibility": "fixed"}]
