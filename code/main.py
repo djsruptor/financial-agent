@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -311,11 +312,15 @@ def _source_index(dataset: dict, context: dict) -> dict[str, dict]:
     cutoff = context["request_date"].isoformat() + "T23:59:59Z"
     sources = {}
     for row in dataset["messages"]:
-        if row["user_id"] == context["user_id"] and row.get("sent_at", "") <= cutoff and row.get("request_id") in {"", context["request"]["request_id"]}:
+        material = re.search(r"\b(?:EUR|IDR|INR|USD|ZAR)\s*[0-9]", row.get("message_text", ""))
+        if material and row["user_id"] == context["user_id"] and row.get("sent_at", "") <= cutoff and row.get("request_id") in {"", context["request"]["request_id"]}:
             sources[row["message_id"]] = {"kind": "message", **dict(row)}
     for row in dataset["images"]:
         if row["user_id"] == context["user_id"] and row.get("request_id") in {"", context["request"]["request_id"]}:
-            sources[row["image_id"]] = {"kind": "image", **dict(row)}
+            media = Path("dataset/media/images").resolve()
+            image = (media / f"{row['image_id']}.png").resolve()
+            if media in image.parents and image.is_file():
+                sources[row["image_id"]] = {"kind": "image", "image_path": str(image), **dict(row)}
     return sources
 
 
@@ -372,7 +377,15 @@ def _apply_evidence(context: dict, source: dict, facts: object) -> tuple[bool, s
             if target_id:
                 targets = [event for event in targets if event["event_id"] == target_id]
             if not targets:
-                return False, "ambiguous_or_missing_target"
+                history = [event for event in context["events"] if event.get("category") == "salary" and event.get("direction") == "credit"
+                           and event.get("status") == "settled" and as_date(event.get("settlement_date") or event["event_date"]) < effective]
+                if target_id or len(history) < 3:
+                    return False, "ambiguous_or_missing_target"
+                targets = [{"event_id": f"{fact['source_id']}:salary", "user_id": context["user_id"], "event_type": "income",
+                            "description": "validated salary amendment", "category": "salary", "direction": "credit",
+                            "amount": "", "currency": fact["currency"], "event_date": effective.isoformat(),
+                            "settlement_date": effective.isoformat(), "status": "scheduled", "linked_event_id": "", "flexibility": "fixed"}]
+                context["events"].extend(targets)
         elif effect == "net_amount":
             targets = [event for event in context["events"] if event["event_id"] == target_id]
             if len(targets) != 1:
@@ -395,8 +408,11 @@ def _dispatch(action: dict, context: dict, dataset: dict, sources: dict, revisio
     if not isinstance(args, dict):
         return _observation_error("malformed_arguments"), revision, forecast
     if name == "inspect_records":
+        evidence = [{"source_id": key, "kind": source["kind"], "message_text": source.get("message_text", ""),
+                     "related_event_id": source.get("related_event_id", ""), "image_path": source.get("image_path", "")}
+                    for key, source in sorted(sources.items())]
         return {"ok": True, "request_id": context["request"]["request_id"], "user_id": context["user_id"],
-                "evidence_ids": sorted(sources), "unresolved_evidence": sorted(context["unresolved_evidence"])}, revision, forecast
+                "evidence": evidence, "unresolved_evidence": sorted(context["unresolved_evidence"])}, revision, forecast
     if name == "resolve_evidence":
         source_id = args.get("source_id")
         source = sources.get(source_id)
