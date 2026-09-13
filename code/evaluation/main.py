@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from main import ZERO, build_request_context, reconstruct_cash_state
+from main import ZERO, check_schedule, forecast_baseline, project_flows, reconstruct_cash_state
 
 
 def context(events, *, balance="500", floor="200", currency="EUR", day="2026-01-01", rates=()):
@@ -38,6 +38,26 @@ def input_checks() -> None:
     assert reconstruct_cash_state(context([event("missing-fx", "10", currency="USD")]))["unresolved_evidence"] == ["missing-fx"]
 
 
+def forecast_checks() -> None:
+    later = context([event("debit", "500", when="2026-01-11"), event("salary", "700", direction="credit", when="2026-01-21")], balance="1000", floor="200", day="2026-01-01")
+    result = forecast_baseline(later)
+    assert result["safe_amount"] == Decimal("300") and result["earliest_date"] == date(2026, 1, 21)
+    breach = context([event("debit", "40", when="2026-01-02"), event("salary", "100", direction="credit", when="2026-01-03")], balance="120", floor="100")
+    assert forecast_baseline(breach)["baseline_feasible"] is False
+    floor_case = context([], balance="500", floor="200")
+    floor_case["requested_amount"] = Decimal("300")
+    exact = forecast_baseline(floor_case)
+    assert exact["safe_amount"] == Decimal("300") and exact["earliest_date"] == date(2026, 1, 1)
+    same_day = context([event("debit", "100", when="2026-01-02"), event("credit", "200", direction="credit", when="2026-01-02")], balance="250", floor="200")
+    assert forecast_baseline(same_day)["baseline_feasible"] is False
+    boundary = forecast_baseline(context([event("edge", "100", when="2026-03-31")], balance="500", floor="200"))
+    assert boundary["safe_amount"] == Decimal("200")
+    assert not check_schedule(result["normalized_context"], [{"date": "2026-01-21", "amount": "1001"}])["safe"]
+    weekly = context([event("a", "20", when="2025-12-11"), event("b", "30", when="2025-12-18"), event("c", "25", when="2025-12-25")])
+    projected = [flow for flow in project_flows(weekly) if flow["synthetic"]]
+    assert [flow["amount"] for flow in projected[:3]] == [Decimal("30")] * 3
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checks", choices=("input", "forecast", "core"))
@@ -47,8 +67,7 @@ def main() -> None:
     if args.checks in {"input", "core"}:
         input_checks()
     if args.checks in {"forecast", "core"}:
-        from main import forecast_checks_placeholder  # added by task 2
-        forecast_checks_placeholder()
+        forecast_checks()
     print("checks passed")
 
 

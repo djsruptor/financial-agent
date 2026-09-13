@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from datetime import date, datetime
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -132,6 +132,152 @@ def reconstruct_cash_state(context: dict) -> dict:
     return context
 
 
+def _month_after(day: date) -> date:
+    month = day.month + 1
+    year = day.year + (month == 13)
+    month = 1 if month == 13 else month
+    import calendar
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
+def _recurs_monthly(events: list[dict], start: date, end: date) -> list[dict]:
+    """Project only three-observation monthly obligations, preserving source IDs."""
+    grouped: dict[tuple, list[dict]] = {}
+    for event in events:
+        if event.get("status") != "settled" or event.get("direction") not in {"debit", "credit"}:
+            continue
+        try:
+            settled, amount = as_date(event.get("settlement_date") or event["event_date"]), money(event.get("amount"))
+        except (ValueError, KeyError):
+            continue
+        if amount is None or settled >= start or settled < start - timedelta(days=180):
+            continue
+        key = (event.get("description", "").strip().lower(), event.get("category", ""), event.get("currency", ""), event["direction"])
+        grouped.setdefault(key, []).append(event)
+    result = []
+    for records in grouped.values():
+        records.sort(key=lambda row: as_date(row.get("settlement_date") or row["event_date"]))
+        if len(records) < 3:
+            continue
+        last_three = records[-3:]
+        dates = [as_date(row.get("settlement_date") or row["event_date"]) for row in last_three]
+        if len({(d.year, d.month) for d in dates}) != 3:
+            continue
+        # Same calendar day or month-end supports a monthly inference.
+        import calendar
+        anchors = [d.day == calendar.monthrange(d.year, d.month)[1] for d in dates]
+        if not (len({d.day for d in dates}) == 1 or all(anchors)):
+            continue
+        sample = last_three[-1]
+        amount = money(sample["amount"])
+        if amount is None:
+            continue
+        next_day = _month_after(dates[-1])
+        while next_day <= end:
+            result.append({"source_id": sample["event_id"], "date": next_day, "amount": amount,
+                           "direction": sample["direction"], "category": sample.get("category", ""), "synthetic": True})
+            next_day = _month_after(next_day)
+    return result
+
+
+def _recurs_interval(events: list[dict], start: date, end: date) -> list[dict]:
+    """Project only a stable 7/14/21-day debit cadence using its conservative amount."""
+    grouped: dict[tuple, list[dict]] = {}
+    for event in events:
+        if event.get("status") != "settled" or event.get("direction") != "debit":
+            continue
+        try:
+            settled, amount = as_date(event.get("settlement_date") or event["event_date"]), money(event.get("amount"))
+        except (ValueError, KeyError):
+            continue
+        if amount is None or settled >= start or settled < start - timedelta(days=180):
+            continue
+        # Description changes are expected for variable essentials; category is stable evidence.
+        grouped.setdefault((event.get("category", ""), event.get("currency", "")), []).append(event)
+    result = []
+    for records in grouped.values():
+        records.sort(key=lambda row: as_date(row.get("settlement_date") or row["event_date"]))
+        if len(records) < 3:
+            continue
+        recent = records[-3:]
+        days = [as_date(row.get("settlement_date") or row["event_date"]) for row in recent]
+        gap = (days[-1] - days[-2]).days
+        if gap not in {7, 14, 21} or (days[-2] - days[-3]).days != gap:
+            continue
+        amounts = [money(row["amount"]) for row in recent]
+        if any(value is None for value in amounts):
+            continue
+        next_day = days[-1] + timedelta(days=gap)
+        while next_day <= end:
+            result.append({"source_id": recent[-1]["event_id"], "date": next_day, "amount": max(amounts),
+                           "direction": "debit", "category": recent[-1].get("category", ""), "synthetic": True})
+            next_day += timedelta(days=gap)
+    return result
+
+
+def project_flows(context: dict) -> list[dict]:
+    """Combine explicit normalized cash with supported, non-duplicated recurrences."""
+    start, end = context["request_date"], context["request_date"] + timedelta(days=89)
+    explicit = list(context.get("flows", []))
+    used = {(flow["date"], flow["category"], flow["direction"]) for flow in explicit}
+    inferred = [flow for flow in _recurs_monthly(context["events"], start, end) + _recurs_interval(context["events"], start, end)
+                if (flow["date"], flow["category"], flow["direction"]) not in used]
+    return sorted(explicit + inferred, key=lambda flow: (flow["date"], flow["direction"] != "debit", flow["source_id"]))
+
+
+def check_schedule(context: dict, payments: list[dict]) -> dict:
+    """Single whole-horizon safety authority; debits, credits, then payments each date."""
+    start, end = context["request_date"], context["request_date"] + timedelta(days=89)
+    balance = context["balance"] - context.get("pending_reserve", ZERO)
+    floor = context["floor"]
+    if balance < floor:
+        return {"safe": False, "balance_path": [{"date": start, "balance": balance}], "first_breach": start}
+    due: dict[date, list[dict]] = {}
+    for payment in payments:
+        when, amount = as_date(payment["date"]), money(payment["amount"])
+        if amount is None or amount < ZERO or not start <= when <= end:
+            return {"safe": False, "balance_path": [], "first_breach": when if start <= when <= end else start}
+        due.setdefault(when, []).append({"amount": amount, "source_id": payment.get("source_id", "payment")})
+    flows = project_flows(context)
+    path = [{"date": start, "balance": balance}]
+    for offset in range(90):
+        current = start + timedelta(days=offset)
+        todays = [flow for flow in flows if flow["date"] == current]
+        for direction in ("debit", "credit"):
+            for flow in (item for item in todays if item["direction"] == direction):
+                balance += -flow["amount"] if direction == "debit" else flow["amount"]
+                path.append({"date": current, "balance": balance, "source_id": flow["source_id"]})
+                if balance < floor:
+                    return {"safe": False, "balance_path": path, "first_breach": current}
+        for payment in due.get(current, []):
+            balance -= payment["amount"]
+            path.append({"date": current, "balance": balance, "source_id": payment["source_id"]})
+            if balance < floor:
+                return {"safe": False, "balance_path": path, "first_breach": current}
+    return {"safe": True, "balance_path": path, "first_breach": None}
+
+
+def forecast_baseline(context: dict) -> dict:
+    context = reconstruct_cash_state(context) if "flows" not in context else context
+    if context["unresolved_evidence"]:
+        return {"status": "analysis_error", "baseline_feasible": None, "safe_amount": None,
+                "earliest_date": None, "normalized_context": context}
+    baseline = check_schedule(context, [])
+    if not baseline["safe"]:
+        return {"status": "ok", "baseline_feasible": False, "safe_amount": ZERO, "earliest_date": None,
+                "first_breach": baseline["first_breach"], "normalized_context": context}
+    minimum = min(item["balance"] for item in baseline["balance_path"])
+    safe_amount = min(context["requested_amount"], minimum - context["floor"])
+    earliest = None
+    for offset in range(90):
+        candidate = context["request_date"] + timedelta(days=offset)
+        if check_schedule(context, [{"date": candidate, "amount": context["requested_amount"]}])["safe"]:
+            earliest = candidate
+            break
+    return {"status": "ok", "baseline_feasible": True, "safe_amount": safe_amount, "earliest_date": earliest,
+            "first_breach": None, "normalized_context": context}
+
+
 def _json(value):
     if isinstance(value, Decimal):
         return format(value, "f")
@@ -147,8 +293,10 @@ def main() -> None:
     parser.add_argument("--structured-only", action="store_true")
     args = parser.parse_args()
     context = reconstruct_cash_state(build_request_context(load_dataset(), args.request_id))
-    result = {"request_id": args.request_id, "analysis_error": bool(context["unresolved_evidence"]),
-              "unresolved_evidence": context["unresolved_evidence"], "flow_count": len(context["flows"])}
+    result = forecast_baseline(context) if args.baseline else {"request_id": args.request_id,
+              "analysis_error": bool(context["unresolved_evidence"]), "unresolved_evidence": context["unresolved_evidence"],
+              "flow_count": len(context["flows"])}
+    result["request_id"] = args.request_id
     print(json.dumps(result, default=_json, sort_keys=True))
 
 
