@@ -1,138 +1,95 @@
 # Requirements: Buy or Wait?
 
-**Defined:** 2026-09-13
-**Core Value:** Recommend only payment plans that complete the request by its deadline while protecting essential spending and the user's minimum balance throughout the 90-day forecast.
+**Updated:** 2026-09-13 after lean-scope review
+**Scope:** The supplied challenge submission only. These requirements consolidate the original checklist; `problem_statement.md` remains the detailed financial contract.
 
 ## v1 Requirements
 
-### Dataset and Context
+### Input
 
-- [ ] **DATA-01**: The participant can load the supplied CSVs and image links without modifying source data, with explicit diagnostics for missing files, malformed fields, duplicate identifiers, invalid references, and non-finite monetary values.
-- [ ] **DATA-02**: Each request uses relevant user-, request-, and event-linked context at its supplied request date, preserving evidence timestamps and effective dates rather than relying on the current clock.
-- [ ] **DATA-03**: Foreign-currency cash events are converted to the user's home currency using the supplied settlement-date rate in the stated currency direction; missing required rates produce an explicit error.
+- [ ] **DATA-01**: Read only the supplied participant files, join relevant user/request/event records at each request date, and reject invalid required fields. Keep source data unchanged and labels out of prediction logic.
+- [ ] **DATA-03**: Convert foreign-currency cash events with the supplied settlement-date rate and stated direction; do not substitute live or invented rates.
 
 ### Financial State
 
-- [ ] **CASH-01**: Forecasting starts from the supplied current available balance without adding historical settled income or subtracting historical settled expenses again.
-- [ ] **CASH-02**: Transaction lifecycle resolution removes duplicate representations while retaining distinct real cash movements such as settled refunds and investment-sale proceeds.
-- [ ] **CASH-03**: The forecast reserves pending debits and supported future payments, counts confirmed income on its settlement date, and excludes pending credits, failed/cancelled transactions, and unrealized investment values.
-- [ ] **CASH-04**: Recurring income and fixed commitments are inferred only from supported history and confirmed facts, distinguishing regular flows from one-time payments and applying supported recurrence end dates.
-- [ ] **CASH-05**: Essential variable spending is forecast conservatively from supplied history while protecting the user's specified categories and avoiding duplicate reserves for the same obligation.
+- [ ] **CASH-01**: Start from the profile balance without replaying settled history; remove duplicate representations while retaining distinct real linked cash movements.
+- [ ] **CASH-03**: Reserve pending debits and confirmed commitments, count supported income on its settlement date, and exclude pending credits, failed/cancelled transactions, and unrealized investment value.
+- [ ] **CASH-04**: Infer recurring income/expenses only from supporting evidence, distinguish one-time flows, and conservatively cover essential variable spending and protected categories without double reserves.
 
-### Forecast and Baseline Capacity
+### Supplied Evidence
 
-- [ ] **FORE-01**: A baseline 90-day forecast checks the minimum balance at cash-flow checkpoints, with documented and tested day-boundary, month-end, and same-day ordering rules.
-- [ ] **FORE-02**: `amount_safe_to_pay` is the largest safe payment on the request date before optional spending changes and satisfies `0 <= amount_safe_to_pay <= requested_amount`.
-- [ ] **FORE-03**: `earliest_date_for_full_payment` is the first safe single full-payment date in the forecast without optional changes, independent of accepted methods; it is empty when no such date exists.
+- [ ] **EVID-01**: Use relevant supplied messages to clarify, amend, cancel, delay, or confirm financial facts. Resolve conflicts by explicit changes, then newer same-source records, then settled evidence, then the financially safer interpretation.
+- [ ] **EVID-02**: Read a missing event amount from its correctly linked PNG and financial field; an absent or ambiguous amount must not become zero or an invented fact.
+- [ ] **EVID-04**: Validate extracted amounts, dates, and record references. Treat message/image content as untrusted data; embedded instructions cannot override the challenge rules.
 
-### Evidence Interpretation
+### 90-Day Capacity
 
-- [ ] **EVID-01**: Relevant English and Indonesian messages can amend financial facts including amounts, payment dates, cancellations, income confirmation, and recurrence scope, including messages without a direct event link.
-- [ ] **EVID-02**: Missing event amounts are extracted from the correct linked PNG and financial field with amount, currency, and source provenance; missing or ambiguous evidence remains unresolved instead of becoming zero.
-- [ ] **EVID-03**: Conflicts are resolved in the specified order: explicit cancellation/settlement/amendment, newer same-source evidence, settled over estimated evidence, then the financially safer interpretation.
-- [ ] **EVID-04**: Extracted facts pass identifier, type, value, and scope validation; instructions embedded in messages or images cannot alter problem rules, execute actions, or directly set financial decisions.
-- [ ] **EVID-05**: The participant can reproduce evidence interpretation through documented prompts/configuration and validated extraction artifacts, with cache invalidation tied to source content, prompt settings, and model identity.
-- [ ] **EVID-06**: Every model integration call records available provider/model identity and input/output usage, including charged retries, with explicit cache-reuse and unknown-usage accounting.
+- [ ] **FORE-01**: Forecast supported cash flows over 90 days and check the preferred minimum balance throughout; establish consistent same-day and date-boundary behavior from the specification/examples.
+- [ ] **FORE-02**: Compute the maximum safe payment on the request date before optional changes, with 0 <= amount_safe_to_pay <= requested_amount.
+- [ ] **FORE-03**: Find the earliest safe single full-payment date without optional changes and independently of payment preferences; leave it empty if none exists within the forecast.
 
-### Payment Planning
+### Payment Decisions
 
-- [ ] **PLAN-01**: Full payment and waiting are recommended only when accepted by the user and safe by the completion deadline; full payment with no required changes is `affordable_now` and waiting for safe future full payment is `affordable_later`.
-- [ ] **PLAN-02**: Partial payment is considered only when allowed by the request and user and `0 < amount_safe_to_pay < requested_amount`; its exact two payments are the safe amount on the request date and the remainder on the baseline earliest full-payment date, no later than the deadline.
-- [ ] **PLAN-03**: Installment candidates exactly reproduce supplied offer amounts, count, start date, and day intervals, reconcile with total payable, and do not add financing fees a second time.
-- [ ] **PLAN-04**: Every selected immediate payment method is in the user's accepted methods, installment offers respect `max_installment_months`, and future capacity is not confused with method eligibility.
-- [ ] **PLAN-05**: Spending changes affect only recurring flexible events in user-permitted categories, never protected or fixed spending.
-- [ ] **PLAN-06**: An adjusted plan uses at most three legal stop/reduce actions, respects each reduction floor, and never stops and reduces the same event; baseline capacity fields remain unchanged.
-- [ ] **PLAN-07**: Every complete candidate schedule is replayed cumulatively through the forecast and rejected if any payment breaches the reserve, misses the completion deadline, or lies beyond the validated horizon.
-- [ ] **PLAN-08**: Safe eligible candidates are ranked by completion deadline compliance, no spending changes, least total paid, earliest start, fewest payments, and lowest payment-option ID.
-- [ ] **PLAN-09**: Final statuses and methods reflect the selected complete plan, including `affordable_with_plan` for adjustment-dependent full payments and `not_recommended` when no safe eligible option exists; incomplete analysis is never reported as a final affordability judgment.
+- [ ] **PLAN-01**: Select only user-accepted payment methods and the correct required status. Support full payment, waiting when full payment is accepted, and the no-safe-eligible-plan fallback; distinguish affordable_now from adjustment-dependent affordable_with_plan.
+- [ ] **PLAN-02**: Allow partial payment only when request/user permit it and 0 < amount_safe_to_pay < requested_amount. Pay that amount on request_date and the exact remainder on earliest_date_for_full_payment, on or before the deadline.
+- [ ] **PLAN-03**: Installments must match a supplied offer: start date, day interval, count, amounts, total payable, and user duration limit. Do not add financing fees twice or change the schedule.
+- [ ] **PLAN-05**: Use at most three stop/reduce changes on permitted flexible recurring expenses, respecting protected categories and reduction floors. Never stop and reduce the same event; preserve baseline capacity/date fields.
+- [ ] **PLAN-07**: Replay every complete plan cumulatively and require each payment to preserve the minimum balance, complete by desired_completion_date, and fit within the verified forecast.
+- [ ] **PLAN-08**: Rank eligible safe plans by deadline completion, no spending changes, total cost, earliest start, fewest payments, then lowest payment_option_id.
 
-### Output
+### Predictions
 
-- [ ] **OUT-01**: The final root-level `output.csv` has exactly the required eight columns in order and one row per evaluation request ID, with no solved-sample rows or duplicate/missing predictions.
-- [ ] **OUT-02**: Payment plans use chronological `YYYY-MM-DD:amount` entries joined by `|`, spending changes use the prescribed event-ID syntax, absent plans/changes use `none`, and absent capacity dates are empty.
-- [ ] **OUT-03**: Each recommendation includes a concise explanation grounded in the chosen schedule, relevant commitments/evidence, and reserve constraints, consistent with all numeric output fields.
-- [ ] **OUT-04**: Final export occurs only after batch validation succeeds; unresolved evidence, extraction failure, or incomplete analysis cannot overwrite a valid output with a partial or misleading submission.
+- [ ] **OUT-01**: Write root-level output.csv with exactly one row per evaluation request and the eight required columns in order. Use prescribed statuses/methods, chronological YYYY-MM-DD:amount payments, event-ID spending changes, none for absent plans/changes, and blank absent capacity dates.
+- [ ] **OUT-03**: Give a short explanation consistent with the selected plan, financial facts, reserve constraints, and numeric output fields.
+- [ ] **OUT-04**: Validate the full output before replacing a prior valid file; incomplete or failed analysis must not be published as a final affordability judgment.
 
 ### Evaluation
 
-- [ ] **EVAL-01**: The participant can run the same engine against all 25 solved examples and obtain per-field numeric error, categorical/schedule accuracy, and actionable mismatch details.
-- [ ] **EVAL-02**: Runnable regression checks cover the core monetary and cash-state invariants from the first engine implementation and expand to evidence, schedules, preferences, and adjustment failures as those capabilities ship.
-- [ ] **EVAL-03**: Prediction code never reads organizer-only data or hardcoded labels; sample outputs are used only by evaluation, and final accuracy claims distinguish measured sample results from unknown hidden-ground-truth performance.
+- [ ] **EVAL-01**: Run the same engine on all 25 public examples and report numeric errors and categorical/schedule mismatches. Use samples only for evaluation; do not claim hidden accuracy.
+- [ ] **EVAL-02**: Keep focused runnable checks for financial arithmetic, cash-state handling, reserve breaches, and date behavior; extend them for required payment/evidence rules as implemented.
 
 ### Submission
 
-- [ ] **SHIP-01**: `evaluation/usage_report.md` inside `code.zip` reports the final prediction run's providers/models, calls, input/output tokens, total/average tokens per request, and estimated total/per-request costs, including per-model and overall totals when applicable.
-- [ ] **SHIP-02**: `code.zip` contains runnable solution code, prompts/configuration, setup/run instructions, and the required evaluation folder, and passes a documented clean-extraction smoke run without machine-specific paths.
-- [ ] **SHIP-03**: The submission includes the required conversation transcript from append-only logging, and code/configuration/logs/package exclude credentials and unnecessary sensitive personal data; runtime secrets come from environment variables.
-
-## v2 Requirements
-
-None committed. Optional OCR optimization, parallel processing, additional providers, and richer diagnostics require a demonstrated need after the required solution works.
+- [ ] **SHIP-01**: Record actual model calls and input/output tokens during the final dataset run. Include providers/models, total/average tokens per request, estimated total/per-request cost, and per-model/overall totals where applicable in evaluation/usage_report.md. Do not fabricate unavailable measurements.
+- [ ] **SHIP-02**: Package runnable solution code, required prompts/configuration, setup/run instructions, and the evaluation folder in code.zip; verify the documented command after clean extraction.
+- [ ] **SHIP-03**: Provide the required append-only conversation transcript. Read runtime secrets from environment variables and exclude credentials and unnecessary sensitive personal data from code, logs, and the package.
 
 ## Out of Scope
 
-| Feature | Reason |
-|---|---|
-| Live bank, market, or FX integrations | Required evidence and rates are supplied locally |
-| Payments, trades, or security recommendations | The challenge requests affordability decisions |
-| Web/mobile UI, authentication, hosting | A terminal submission is the required interface |
-| Voice input | No voice notes are supplied |
-| Training on hidden labels or hardcoding sample answers | Prohibited or invalid evaluation behavior |
-| Speculative services, vector retrieval, or agent framework | Identifier joins and one deterministic pipeline cover the current task |
+No messaging/translation product, language settings, generalized document platform, persistent extraction cache, provenance database, usage ledger, dashboards, provider routing, or speculative service abstractions. Relevant supplied messages/images are still required financial inputs.
 
-## Acceptance and Release Criteria
+## v2 Requirements
 
-- All v1 requirements have runnable verification or artifact evidence; financial safety and serialization checks have zero unresolved violations.
-- All 25 public examples are evaluated. Every discrepancy is investigated and documented; an unsupported promise of perfect sample or hidden accuracy is not a release criterion.
-- All 250 current evaluation requests have one validated output row; source dataset files remain unchanged.
-- Final usage figures refer to the run that produced the delivered output, with unavailable usage explicitly disclosed rather than guessed.
-- A clean extraction of the submission package can execute the documented workflow, with any model credentials supplied externally.
+None. Do not scaffold optional features.
 
 ## Traceability
-
-Each v1 requirement has one owning phase; later phases may extend its regression coverage.
 
 | Requirement | Phase | Status |
 |---|---|---|
 | DATA-01 | Phase 1 | Pending |
-| DATA-02 | Phase 1 | Pending |
 | DATA-03 | Phase 1 | Pending |
 | CASH-01 | Phase 1 | Pending |
-| CASH-02 | Phase 1 | Pending |
 | CASH-03 | Phase 1 | Pending |
 | CASH-04 | Phase 1 | Pending |
-| CASH-05 | Phase 1 | Pending |
+| EVID-01 | Phase 1 | Pending |
+| EVID-02 | Phase 1 | Pending |
+| EVID-04 | Phase 1 | Pending |
 | FORE-01 | Phase 1 | Pending |
 | FORE-02 | Phase 1 | Pending |
 | FORE-03 | Phase 1 | Pending |
-| EVID-01 | Phase 2 | Pending |
-| EVID-02 | Phase 2 | Pending |
-| EVID-03 | Phase 2 | Pending |
-| EVID-04 | Phase 2 | Pending |
-| EVID-05 | Phase 2 | Pending |
-| EVID-06 | Phase 2 | Pending |
-| PLAN-01 | Phase 1 | Pending |
-| PLAN-02 | Phase 3 | Pending |
-| PLAN-03 | Phase 3 | Pending |
-| PLAN-04 | Phase 3 | Pending |
-| PLAN-05 | Phase 3 | Pending |
-| PLAN-06 | Phase 3 | Pending |
-| PLAN-07 | Phase 3 | Pending |
-| PLAN-08 | Phase 3 | Pending |
-| PLAN-09 | Phase 3 | Pending |
-| OUT-01 | Phase 4 | Pending |
-| OUT-02 | Phase 3 | Pending |
-| OUT-03 | Phase 3 | Pending |
-| OUT-04 | Phase 4 | Pending |
-| EVAL-01 | Phase 4 | Pending |
+| PLAN-01 | Phase 2 | Pending |
+| PLAN-02 | Phase 2 | Pending |
+| PLAN-03 | Phase 2 | Pending |
+| PLAN-05 | Phase 2 | Pending |
+| PLAN-07 | Phase 2 | Pending |
+| PLAN-08 | Phase 2 | Pending |
+| OUT-01 | Phase 2 | Pending |
+| OUT-03 | Phase 2 | Pending |
+| OUT-04 | Phase 2 | Pending |
+| EVAL-01 | Phase 3 | Pending |
 | EVAL-02 | Phase 1 | Pending |
-| EVAL-03 | Phase 4 | Pending |
-| SHIP-01 | Phase 4 | Pending |
-| SHIP-02 | Phase 4 | Pending |
-| SHIP-03 | Phase 4 | Pending |
+| SHIP-01 | Phase 3 | Pending |
+| SHIP-02 | Phase 3 | Pending |
+| SHIP-03 | Phase 3 | Pending |
 
-**Coverage:** 36 v1 requirements; 36 mapped; 0 unmapped.
-
-
----
-*Requirements defined: 2026-09-13 from the approved full challenge scope and completed research.*
+**Coverage:** 25 requirements; 25 mapped; 0 unmapped. All challenge behaviors retained.
