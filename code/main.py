@@ -215,12 +215,36 @@ def _recurs_interval(events: list[dict], start: date, end: date) -> list[dict]:
     return result
 
 
+def _supported_salary_schedule(events: list[dict], start: date, end: date) -> list[dict]:
+    """A named next salary plus a settled salary is evidence of ongoing employment."""
+    settled_salary = any(
+        event.get("status") == "settled" and event.get("direction") == "credit" and event.get("category") == "salary"
+        and as_date(event.get("settlement_date") or event["event_date"]) < start for event in events
+    )
+    if not settled_salary:
+        return []
+    result = []
+    for event in events:
+        if event.get("status") not in {"scheduled", "confirmed"} or event.get("direction") != "credit" or event.get("category") != "salary":
+            continue
+        amount = money(event.get("amount"))
+        if amount is None:
+            continue
+        next_day = as_date(event.get("settlement_date") or event["event_date"])
+        while next_day <= end:
+            if next_day >= start:
+                result.append({"source_id": event["event_id"], "date": next_day, "amount": amount,
+                               "direction": "credit", "category": "salary", "synthetic": next_day != as_date(event.get("settlement_date") or event["event_date"])})
+            next_day = _month_after(next_day)
+    return result
+
+
 def project_flows(context: dict) -> list[dict]:
     """Combine explicit normalized cash with supported, non-duplicated recurrences."""
     start, end = context["request_date"], context["request_date"] + timedelta(days=89)
     explicit = list(context.get("flows", []))
     used = {(flow["date"], flow["category"], flow["direction"]) for flow in explicit}
-    inferred = [flow for flow in _recurs_monthly(context["events"], start, end) + _recurs_interval(context["events"], start, end)
+    inferred = [flow for flow in _recurs_monthly(context["events"], start, end) + _recurs_interval(context["events"], start, end) + _supported_salary_schedule(context["events"], start, end)
                 if (flow["date"], flow["category"], flow["direction"]) not in used]
     return sorted(explicit + inferred, key=lambda flow: (flow["date"], flow["direction"] != "debit", flow["source_id"]))
 
@@ -296,6 +320,8 @@ def main() -> None:
     result = forecast_baseline(context) if args.baseline else {"request_id": args.request_id,
               "analysis_error": bool(context["unresolved_evidence"]), "unresolved_evidence": context["unresolved_evidence"],
               "flow_count": len(context["flows"])}
+    if args.baseline:
+        result.pop("normalized_context", None)
     result["request_id"] = args.request_id
     print(json.dumps(result, default=_json, sort_keys=True))
 

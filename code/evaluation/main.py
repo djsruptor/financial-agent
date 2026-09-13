@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from main import ZERO, check_schedule, forecast_baseline, project_flows, reconstruct_cash_state
+from main import ZERO, build_request_context, check_schedule, forecast_baseline, load_dataset, project_flows, reconstruct_cash_state
 
 
 def context(events, *, balance="500", floor="200", currency="EUR", day="2026-01-01", rates=()):
@@ -58,6 +59,20 @@ def forecast_checks() -> None:
     assert [flow["amount"] for flow in projected[:3]] == [Decimal("30")] * 3
 
 
+def sample_check(request_id: str) -> dict:
+    dataset = load_dataset()
+    sample = next((row for row in dataset["sample_requests"] if row["request_id"] == request_id), None)
+    if not sample:
+        raise ValueError(f"unknown public sample: {request_id}")
+    fields = ("request_id", "user_id", "request_date", "request_type", "requested_amount", "desired_completion_date", "allows_partial_payment", "request_text")
+    result = forecast_baseline(reconstruct_cash_state(build_request_context(dataset, request_id, {field: sample[field] for field in fields})))
+    if request_id == "request_01":
+        assert result["safe_amount"] == Decimal("25256")
+        assert result["earliest_date"] == date(2024, 3, 3)
+    return {"request_id": request_id, "baseline_feasible": result["baseline_feasible"],
+            "safe_amount": str(result["safe_amount"]), "earliest_date": str(result["earliest_date"] or "")}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checks", choices=("input", "forecast", "core"))
@@ -68,6 +83,9 @@ def main() -> None:
         input_checks()
     if args.checks in {"forecast", "core"}:
         forecast_checks()
+    if args.samples:
+        print(json.dumps(sample_check(args.samples), sort_keys=True))
+        return
     print("checks passed")
 
 
